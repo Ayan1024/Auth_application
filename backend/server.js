@@ -13,37 +13,103 @@ connectDB();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const __dirname = path.resolve();
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
-// Middlewares
+/* -----------------------------------------
+   Build allowed origins (env or defaults)
+-------------------------------------------*/
+const DEFAULT_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://auth-application-y5oy.onrender.com",
+];
+
+const raw = process.env.CORS_ORIGINS || DEFAULT_ORIGINS.join(",");
+let ALLOWED_ORIGINS = raw.split(",").map((o) => o.trim()).filter(Boolean);
+
+// Ensure server's own origin is allowed when running locally in production mode
+const serverLocalOrigins = [
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+];
+
+// Add serverLocalOrigins if not present
+serverLocalOrigins.forEach((o) => {
+  if (!ALLOWED_ORIGINS.includes(o)) ALLOWED_ORIGINS.push(o);
+});
+
+console.log("Allowed CORS origins:", ALLOWED_ORIGINS);
+
+/* -----------------------------------------
+   CORS Options (dynamic origin echo)
+-------------------------------------------*/
+const corsOptions = {
+  origin: (origin, callback) => {
+    // allow non-browser tools (curl/postman) where origin is undefined
+    if (!origin) return callback(null, true);
+
+    // allow if origin is in the whitelist
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Optionally allow any other localhost:* (broad, use if you develop a lot)
+    const isLocalhostOrigin =
+      origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+    if (isLocalhostOrigin) {
+      // you can decide to allow all localhost origins — here we allow them
+      console.warn("Allowing localhost origin dynamically:", origin);
+      return callback(null, true);
+    }
+
+    console.warn("❌ Blocked CORS origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true, // allow cookies/credentials
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+};
+
+// Apply CORS early
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // preflight handling
+
+/* -----------------------------------------
+   Middlewares
+-------------------------------------------*/
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({
-  origin: "http://localhost:5173", // your frontend origin
-  credentials: true,               // allow cookies
-  methods: ["GET", "POST", "PUT", "DELETE"],
-}));
 
-// Routes
+/* -----------------------------------------
+   API Routes
+-------------------------------------------*/
 app.use("/api/users", userRoutes);
 
-// optional protected test route will be added in routes (see below)
-
-// Serve client in production
+/* -----------------------------------------
+   Serve frontend build in production
+-------------------------------------------*/
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "frontend", "dist")));
-
+  const distPath = path.join(__dirname, "frontend", "dist");
+  app.use(express.static(distPath));
   app.get("*", (req, res) => {
-    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
+    res.sendFile(path.join(distPath, "index.html"));
   });
 }
 
-// Global error handlers (optional but helpful)
+/* -----------------------------------------
+   Global error handler
+-------------------------------------------*/
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
+  console.error("🔥 Server error:", err?.message || err);
+  // In CORS origin callback we may get an Error - send 403 for that
+  if (err?.message === "Not allowed by CORS") {
+    return res.status(403).json({ error: "CORS origin forbidden" });
+  }
   res.status(500).json({ error: err?.message || "Server error" });
 });
 
+/* -----------------------------------------
+   Start server
+-------------------------------------------*/
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
