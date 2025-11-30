@@ -18,13 +18,11 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 // Middlewares
 app.use(express.json());
 app.use(cookieParser());
-app.use(
-  cors({
-    origin: FRONTEND_URL,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  })
-);
+app.use(cors({
+  origin: "http://localhost:5173", // your frontend origin
+  credentials: true,               // allow cookies
+  methods: ["GET", "POST", "PUT", "DELETE"],
+}));
 
 // Routes
 app.use("/api/users", userRoutes);
